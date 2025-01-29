@@ -102,6 +102,7 @@ func TestTools_uploadFiles(t *testing.T) {
 
 		wg.Wait()
 	}
+	os.RemoveAll("./testdata/uploads/")
 }
 
 // TestTools_uploadSingleFile tests the UploadFile method by simulating a request
@@ -156,5 +157,19 @@ func TestTools_uploadSingleFile(t *testing.T) {
 	}
 
 	_ = os.Remove("./testdata/uploads/" + UploadedSingleFile.NewFileName)
+	os.RemoveAll("./testdata/uploads/")
 
+}
+
+func TestTools_CrateDirIfNotExists(t *testing.T) {
+	var testTools Tools
+	if err := testTools.CrateDirIfNotExists("./testdata/test-dir"); err != nil {
+		t.Error(err)
+	}
+
+	if err := testTools.CrateDirIfNotExists("./testdata/test-dir"); err != nil {
+		t.Error(err)
+	}
+
+	os.RemoveAll("./testdata/test-dir")
 }

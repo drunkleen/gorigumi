@@ -69,6 +69,10 @@ func (t *Tools) UploadFiles(r *http.Request, uploadDir string, rename ...bool) (
 		t.MaxFileSize = defaultMaxFileSize
 	}
 
+	if err := t.CrateDirIfNotExists(uploadDir); err != nil {
+		return nil, err
+	}
+
 	err := r.ParseMultipartForm(int64(t.MaxFileSize))
 	if err != nil {
 		return nil, errors.New("the uploaded files are too big")
@@ -103,6 +107,10 @@ func (t *Tools) UploadFile(r *http.Request, uploadDir string, rename ...bool) (*
 
 	if t.MaxFileSize == 0 {
 		t.MaxFileSize = defaultMaxFileSize
+	}
+
+	if err := t.CrateDirIfNotExists(uploadDir); err != nil {
+		return nil, err
 	}
 
 	err := r.ParseMultipartForm(int64(t.MaxFileSize))
@@ -191,4 +199,19 @@ func (t *Tools) uploadCheck(
 
 	return &file, nil
 
+}
+
+// CrateDirIfNotExists creates the directory at the given path if it does not
+// already exist. If the directory does exist, this method does nothing and
+// returns nil. If the directory does not exist, this method creates it with
+// permission 0755 and returns nil if successful, or an error if the
+// operation fails.
+func (t *Tools) CrateDirIfNotExists(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		err = os.MkdirAll(path, 0755)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
