@@ -161,6 +161,9 @@ func TestTools_uploadSingleFile(t *testing.T) {
 
 }
 
+// TestTools_CrateDirIfNotExists tests the CrateDirIfNotExists method by creating a directory,
+// then trying to create it again. The test checks that the first call succeeds and the
+// second call does nothing and returns nil.
 func TestTools_CrateDirIfNotExists(t *testing.T) {
 	var testTools Tools
 	if err := testTools.CrateDirIfNotExists("./testdata/test-dir"); err != nil {
@@ -172,4 +175,47 @@ func TestTools_CrateDirIfNotExists(t *testing.T) {
 	}
 
 	os.RemoveAll("./testdata/test-dir")
+}
+
+var slugTests = []struct {
+	name          string
+	input         string
+	expected      string
+	errorExpected bool
+}{
+	{"valid string", "Hello, World!", "hello-world", false},
+	{"valid number", "12345 67890", "12345-67890", false},
+	{"valid string with numbers and special characters", "Hello, World! 1234567890 !@#$%^&*()", "hello-world-1234567890", false},
+	{"invalid number", "!@#$%^&*()", "", true},
+	{"invalid number", "سلام دنیا", "", true},
+	{"invalid number", "你好世界", "", true},
+	{"invalid number", "こんにちは世界", "", true},
+}
+
+// TestTools_ConvertToSlug tests the ConvertToSlug method by converting valid strings to their
+// slug form and checking that invalid strings return an error. It also tests that the method
+// correctly handles strings with special characters and non-english characters.
+func TestTools_ConvertToSlug(t *testing.T) {
+	var testTools Tools
+
+	for _, st := range slugTests {
+		s, err := testTools.ConvertToSlug(st.input)
+
+		if err != nil && st.errorExpected {
+			continue
+		}
+		if err == nil && st.errorExpected {
+			t.Errorf("%s: expected error but got none", st.name)
+			continue
+		}
+		if err != nil && !st.errorExpected {
+			t.Errorf("%s: %s`", st.name, err)
+			continue
+		}
+		if s != st.expected && !st.errorExpected {
+			t.Errorf("%s: expected %s, got %s", st.name, st.expected, s)
+			continue
+		}
+	}
+
 }

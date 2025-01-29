@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -214,4 +215,24 @@ func (t *Tools) CrateDirIfNotExists(path string) error {
 		}
 	}
 	return nil
+}
+
+// ConvertToSlug converts a given string to a slug string.
+// It returns the slug string and an error if the string is empty or only contains
+// invalid characters.
+func (t *Tools) ConvertToSlug(s string) (string, error) {
+	if s == "" {
+		return "", errors.New("string is empty")
+	}
+	regex := regexp.MustCompile(`[^a-z\d]+`)
+
+	slug := strings.Trim(
+		regex.ReplaceAllString(strings.ToLower(s), "-"), "-",
+	)
+
+	if len(slug) == 0 {
+		return "", errors.New("not valid string characters")
+	}
+
+	return slug, nil
 }
