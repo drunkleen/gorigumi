@@ -185,11 +185,13 @@ var slugTests = []struct {
 }{
 	{"valid string", "Hello, World!", "hello-world", false},
 	{"valid number", "12345 67890", "12345-67890", false},
+	{"valid string with non-english characters", "Hello Word!你好世界", "hello-word", false},
 	{"valid string with numbers and special characters", "Hello, World! 1234567890 !@#$%^&*()", "hello-world-1234567890", false},
+	{"empty string", "", "", true},
 	{"invalid number", "!@#$%^&*()", "", true},
-	{"invalid number", "سلام دنیا", "", true},
-	{"invalid number", "你好世界", "", true},
-	{"invalid number", "こんにちは世界", "", true},
+	{"invalid persian characters", "سلام دنیا", "", true},
+	{"invalid chinese characters", "你好世界", "", true},
+	{"invalid japanese characters", "こんにちは世界", "", true},
 }
 
 // TestTools_ConvertToSlug tests the ConvertToSlug method by converting valid strings to their
