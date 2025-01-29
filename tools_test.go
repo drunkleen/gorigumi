@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"sync"
 	"testing"
@@ -159,6 +160,37 @@ func TestTools_uploadSingleFile(t *testing.T) {
 	_ = os.Remove("./testdata/uploads/" + UploadedSingleFile.NewFileName)
 	os.RemoveAll("./testdata/uploads/")
 
+}
+
+func TestTools_DownloadFile(t *testing.T) {
+	var testTools Tools
+	responseRecorder := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/", nil)
+
+	testTools.DownloadFile(responseRecorder, req, "./testdata", "img.png", "rgb.png")
+
+	if responseRecorder.Code != http.StatusOK {
+		t.Error("Expected status code 200, but got", responseRecorder.Code)
+	}
+
+	result := responseRecorder.Result()
+	result.Body.Close()
+
+	if result.Header.Get("Content-Type") != "image/png" {
+		t.Error("Expected content-type image/png, but got", result.Header.Get("Content-Type"))
+	}
+
+	if result.Header.Get("Content-Disposition") != "attachment; filename=\"rgb.png\"" {
+		t.Error("Expected content-disposition attachment; filename=\"rgb.png\", but got", result.Header.Get("Content-Disposition"))
+	}
+
+	if result.Header.Get("Content-Length") != "1422" {
+		t.Error("Expected content-length 100, but got", result.Header.Get("Content-Length"))
+	}
+
+	if _, err := io.ReadAll(result.Body); err != nil {
+		t.Error(err)
+	}
 }
 
 // TestTools_CrateDirIfNotExists tests the CrateDirIfNotExists method by creating a directory,

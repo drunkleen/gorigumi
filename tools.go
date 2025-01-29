@@ -199,7 +199,21 @@ func (t *Tools) uploadCheck(
 	}
 
 	return &file, nil
+}
 
+// DownloadFile sends a file to the client as an attachment.
+// It takes four parameters, a http.ResponseWriter, a *http.Request, the path to the file,
+// the filename of the file, and the name that the file should have when the client downloads it.
+// The method sets the Content-Disposition header so that the file is downloaded as an attachment.
+// It then uses http.ServeFile to send the file to the client.
+func (t *Tools) DownloadFile(
+	w http.ResponseWriter, r *http.Request,
+	path, fileName, name string,
+) {
+	filePath := filepath.Join(path, fileName)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", name))
+
+	http.ServeFile(w, r, filePath)
 }
 
 // CrateDirIfNotExists creates the directory at the given path if it does not
