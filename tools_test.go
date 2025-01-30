@@ -1,6 +1,8 @@
 package toolkit
 
 import (
+	"encoding/json"
+	"errors"
 	"image"
 	"image/png"
 	"io"
@@ -8,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -16,7 +19,7 @@ import (
 // string of length 10 and checking its length. It also tests that the generated strings are
 // different by generating two strings and comparing them.
 func TestTools_GenerateRandomString(t *testing.T) {
-	var testTools Tools
+	testTools := New()
 	randString := testTools.GenerateRandomString(10)
 	if len(randString) != 10 {
 		t.Error("Expected string of length 10, but got", len(randString))
@@ -55,7 +58,7 @@ func TestTools_uploadFiles(t *testing.T) {
 			defer wg.Done()
 			defer writer.Close()
 
-			// crate the form data field
+			// create the form data field
 			part, err := writer.CreateFormFile("file", "./testdata/img.png")
 			if err != nil {
 				t.Error(err)
@@ -82,7 +85,7 @@ func TestTools_uploadFiles(t *testing.T) {
 		request, _ := http.NewRequest("POST", "/", pipeReader)
 		request.Header.Set("Content-Type", writer.FormDataContentType())
 
-		var testTools Tools
+		testTools := New()
 		testTools.AllowedFileTypes = entry.alowedFileTypes
 
 		UploadedFiles, err := testTools.UploadFiles(request, "./testdata/uploads/", entry.renameFile)
@@ -117,7 +120,7 @@ func TestTools_uploadSingleFile(t *testing.T) {
 	go func() {
 		defer writer.Close()
 
-		// crate the form data field
+		// create the form data field
 		part, err := writer.CreateFormFile("file", "./testdata/img.png")
 		if err != nil {
 			t.Error(err)
@@ -144,7 +147,7 @@ func TestTools_uploadSingleFile(t *testing.T) {
 	request, _ := http.NewRequest("POST", "/", pipeReader)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 
-	var testTools Tools
+	testTools := New()
 
 	testTools.AllowedFileTypes = []string{"image/png"}
 
@@ -163,7 +166,7 @@ func TestTools_uploadSingleFile(t *testing.T) {
 }
 
 func TestTools_DownloadFile(t *testing.T) {
-	var testTools Tools
+	testTools := New()
 	responseRecorder := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/", nil)
 
@@ -193,16 +196,16 @@ func TestTools_DownloadFile(t *testing.T) {
 	}
 }
 
-// TestTools_CrateDirIfNotExists tests the CrateDirIfNotExists method by creating a directory,
+// TestTools_CreateDirIfNotExists tests the CreateDirIfNotExists method by creating a directory,
 // then trying to create it again. The test checks that the first call succeeds and the
 // second call does nothing and returns nil.
-func TestTools_CrateDirIfNotExists(t *testing.T) {
-	var testTools Tools
-	if err := testTools.CrateDirIfNotExists("./testdata/test-dir"); err != nil {
+func TestTools_CreateDirIfNotExists(t *testing.T) {
+	testTools := New()
+	if err := testTools.CreateDirIfNotExists("./testdata/test-dir"); err != nil {
 		t.Error(err)
 	}
 
-	if err := testTools.CrateDirIfNotExists("./testdata/test-dir"); err != nil {
+	if err := testTools.CreateDirIfNotExists("./testdata/test-dir"); err != nil {
 		t.Error(err)
 	}
 
@@ -230,7 +233,7 @@ var slugTests = []struct {
 // slug form and checking that invalid strings return an error. It also tests that the method
 // correctly handles strings with special characters and non-english characters.
 func TestTools_ConvertToSlug(t *testing.T) {
-	var testTools Tools
+	testTools := New()
 
 	for _, st := range slugTests {
 		s, err := testTools.ConvertToSlug(st.input)
@@ -252,4 +255,121 @@ func TestTools_ConvertToSlug(t *testing.T) {
 		}
 	}
 
+}
+
+// JSONTests is a slice of structs that hold the name of the test, the input JSON string,
+// the maximum size of the JSON file, and a boolean that indicates if an error is expected
+var JSONTests = []struct {
+	name               string
+	inputJSON          string
+	maxSize            int
+	allowUnknownFields bool
+	errorExpected      bool
+}{
+	{"valid JSON", `{"str": "foo"}`, 1024, false, false},
+	{"badly-formed JSON", `{"str":}`, 1024, false, true},
+	{"incorrect type JSON", `{"str": 42}`, 1024, false, true},
+	{"double JSON data", `{"str": "foo"}{"str": "foo"}`, 1024, false, true},
+	{"unkown field key", `{"str": "foo", "num": 42}`, 1024, false, true},
+	{"allow unkown field key", `{"str": "foo", "num": 42}`, 1024, true, false},
+	{"JSON syntax error", `{"str" "foo"}`, 1024, false, true},
+	{"missing closing brace", `{"str" "foo"`, 1024, false, true},
+	{"missing opening brace", `"str" "foo"}`, 1024, false, true},
+	{"not JSON", `test string`, 1024, false, true},
+	{"large JSON size", `"str" "foo"}`, 4, false, true},
+}
+
+// TestTools_JSONRead tests the JSONRead method of the Tools struct by sending various JSON
+// payloads in HTTP requests and checking for expected outcomes. It verifies that the method
+// correctly handles different scenarios such as valid JSON, malformed JSON, unknown fields,
+// and size constraints. The test iterates over a set of predefined test cases, adjusting the
+// MaxJSONSize and AllowUnknownFields settings for each case, and checks that the resulting
+// behavior matches the expected error state and HTTP response status code.
+
+func TestTools_JSONRead(t *testing.T) {
+	testTools := New()
+
+	for _, jt := range JSONTests {
+		testTools.MaxJSONSize = jt.maxSize
+		testTools.AllowUnknownFields = jt.allowUnknownFields
+
+		var decodedJSON struct {
+			Str string `json:"str"`
+		}
+
+		req, err := http.NewRequest("POST", "/", strings.NewReader(jt.inputJSON))
+		if err != nil {
+			t.Error(err)
+		}
+		defer req.Body.Close()
+
+		responseRecorder := httptest.NewRecorder()
+
+		err = testTools.JSONRead(responseRecorder, req, &decodedJSON)
+
+		if jt.errorExpected && err == nil {
+			t.Errorf("%s: Expected error but got none", jt.name)
+		}
+
+		if !jt.errorExpected && err != nil {
+			t.Errorf("%s: %s", jt.name, err)
+		}
+
+		if responseRecorder.Code != http.StatusOK {
+			t.Errorf("%s: expected status code %d, got %d", jt.name, http.StatusOK, responseRecorder.Code)
+		}
+
+		if _, err := io.ReadAll(responseRecorder.Body); err != nil {
+			t.Error(err)
+		}
+
+	}
+}
+
+// TestTools_JSONWrite tests the JSONWrite method by writing a JSON response to the client
+// with a status code of 200 and a JSON payload.
+func TestTools_JSONWrite(t *testing.T) {
+	testTools := New()
+
+	responseRecorder := httptest.NewRecorder()
+	payload := JSONResponse{
+		Error:   false,
+		Message: "foo",
+	}
+
+	headers := make(http.Header)
+	headers.Add("foo", "bar")
+
+	if err := testTools.JSONWrite(responseRecorder, 200, payload); err != nil {
+		t.Errorf("failed to write JSON: %v", err)
+	}
+
+}
+
+func TestTools_JSONError(t *testing.T) {
+	testTools := New()
+
+	responseRecorder := httptest.NewRecorder()
+
+	if err := testTools.JSONError(responseRecorder, errors.New("foo"), http.StatusBadGateway); err != nil {
+		t.Errorf("failed to write JSON: %v", err)
+	}
+
+	var res JSONResponse
+	decoder := json.NewDecoder(responseRecorder.Body)
+	if err := decoder.Decode(&res); err != nil {
+		t.Errorf("failed to decode JSON: %v", err)
+	}
+
+	if !res.Error {
+		t.Errorf("expected error, but got success")
+	}
+
+	if responseRecorder.Code != http.StatusBadGateway {
+		t.Errorf("expected status code %d, got %d", http.StatusBadGateway, responseRecorder.Code)
+	}
+
+	if res.Message != "foo" {
+		t.Errorf("expected message 'foo', got %s", res.Message)
+	}
 }

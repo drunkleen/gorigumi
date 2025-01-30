@@ -2,6 +2,7 @@ package toolkit
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,8 +27,21 @@ const (
 // Tools is the type used to instantiate this module.
 // Any variable of this type will have access to all methods with receiver *Tools
 type Tools struct {
-	MaxFileSize      int
+	// MaxFileSize is the maximum file size in bytes
+	MaxFileSize int
+	// AllowedFileTypes is the list of allowed file types. Included '*'
+	// indicates that all file types are allowed
 	AllowedFileTypes []string
+	// MaxJSONSize is the maximum size of a JSON object. Default to 1MB
+	MaxJSONSize int
+	// AllowUnknownFields is a boolean that indicates if unknown fields
+	// are allowed in JSON
+	AllowUnknownFields bool
+}
+
+// New returns a new empty instance of Tools.
+func New() *Tools {
+	return &Tools{}
 }
 
 // GenerateRandomString generates a random string of length n.
@@ -70,7 +84,7 @@ func (t *Tools) UploadFiles(r *http.Request, uploadDir string, rename ...bool) (
 		t.MaxFileSize = defaultMaxFileSize
 	}
 
-	if err := t.CrateDirIfNotExists(uploadDir); err != nil {
+	if err := t.CreateDirIfNotExists(uploadDir); err != nil {
 		return nil, err
 	}
 
@@ -110,7 +124,7 @@ func (t *Tools) UploadFile(r *http.Request, uploadDir string, rename ...bool) (*
 		t.MaxFileSize = defaultMaxFileSize
 	}
 
-	if err := t.CrateDirIfNotExists(uploadDir); err != nil {
+	if err := t.CreateDirIfNotExists(uploadDir); err != nil {
 		return nil, err
 	}
 
@@ -157,13 +171,9 @@ func (t *Tools) uploadCheck(
 	fileType := http.DetectContentType(buff)
 
 	if len(t.AllowedFileTypes) > 0 {
-		if t.AllowedFileTypes[0] == "*" {
-			allowed = true
-		} else {
-			for _, v := range t.AllowedFileTypes {
-				if strings.EqualFold(v, fileType) {
-					allowed = true
-				}
+		for _, v := range t.AllowedFileTypes {
+			if strings.EqualFold(v, fileType) || strings.EqualFold(v, "*") {
+				allowed = true
 			}
 		}
 	}
@@ -216,12 +226,10 @@ func (t *Tools) DownloadFile(
 	http.ServeFile(w, r, filePath)
 }
 
-// CrateDirIfNotExists creates the directory at the given path if it does not
-// already exist. If the directory does exist, this method does nothing and
-// returns nil. If the directory does not exist, this method creates it with
-// permission 0755 and returns nil if successful, or an error if the
-// operation fails.
-func (t *Tools) CrateDirIfNotExists(path string) error {
+// CreateDirIfNotExists creates a directory if it does not exist.
+// It takes a single parameter, the path to the directory.
+// The method returns an error if the directory cannot be created.
+func (t *Tools) CreateDirIfNotExists(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		err = os.MkdirAll(path, 0755)
 		if err != nil {
@@ -231,9 +239,11 @@ func (t *Tools) CrateDirIfNotExists(path string) error {
 	return nil
 }
 
-// ConvertToSlug converts a given string to a slug string.
-// It returns the slug string and an error if the string is empty or only contains
-// invalid characters.
+// ConvertToSlug converts a given string into a URL-friendly slug.
+// It replaces all non-alphanumeric characters with hyphens and
+// trims leading and trailing hyphens. The function returns an
+// error if the input string is empty or if the resulting slug
+// is empty due to invalid characters.
 func (t *Tools) ConvertToSlug(s string) (string, error) {
 	if s == "" {
 		return "", errors.New("string is empty")
@@ -249,4 +259,129 @@ func (t *Tools) ConvertToSlug(s string) (string, error) {
 	}
 
 	return slug, nil
+}
+
+// JSONResponse is a struct that is used to return a JSON response to the client.
+// It has three fields: Error, Message, and Data.
+// The Error field is a boolean that indicates whether the response is an error or not.
+// The Message field is a string that contains the error message if the response is an error.
+// The Data field is a generic type that contains the data to be returned in the response.
+// If the Data field is not set, it will be set to nil.
+type JSONResponse struct {
+	Error   bool   `json:"error,omitempty"`
+	Message string `json:"message,omitempty"`
+	Data    any    `json:"data,omitempty"`
+}
+
+// ReadJSON reads a JSON request body into the given destination.
+//
+// The maximum size of the request body is set to 1MB by default, but can be
+// overridden by setting the MaxJSONSize field of the Tools struct to a non-zero value.
+//
+// If the request body is too large, an error will be returned with the message
+// "body must not be larger than X bytes".
+//
+// If the request body contains invalid JSON, an error will be returned with a
+// message describing the problem.
+//
+// If the request body contains unknown fields and the AllowUnknownFields field
+// of the Tools struct is set to false, an error will be returned with a message
+// describing the unknown field.
+//
+// If the request body contains more than one JSON value, an error will be returned
+// with the message "body should'nt contain more than one json value".
+func (t *Tools) JSONRead(w http.ResponseWriter, r *http.Request, jsonData any) error {
+	maxBytes := 1024 * 1024 // 1MB
+	if t.MaxJSONSize != 0 {
+		maxBytes = t.MaxJSONSize
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBytes))
+
+	decoder := json.NewDecoder(r.Body)
+	if !t.AllowUnknownFields {
+		decoder.DisallowUnknownFields()
+	}
+	if err := decoder.Decode(jsonData); err != nil {
+		var syntaxError *json.SyntaxError
+		var unmarshalTypeError *json.UnmarshalTypeError
+		var invalidUnmarshalError *json.InvalidUnmarshalError
+
+		switch {
+		case errors.As(err, &syntaxError):
+			return fmt.Errorf("body contains badly-formed JSON (at position %d)", syntaxError.Offset)
+
+		case errors.Is(err, io.ErrUnexpectedEOF):
+			return errors.New("body contains badly-formed JSON")
+
+		case errors.As(err, &unmarshalTypeError):
+			if unmarshalTypeError.Field != "" {
+				return fmt.Errorf("body contains incorrect JSON type for field %q", unmarshalTypeError.Field)
+			}
+			return fmt.Errorf("body contains an invalid JSON type at position %d", unmarshalTypeError.Offset)
+
+		case errors.Is(err, io.EOF):
+			return errors.New("body must not be empty")
+
+		case strings.HasPrefix(err.Error(), "json: unknown field"):
+			fieldName := strings.TrimPrefix(err.Error(), "json: unknown field")
+			return fmt.Errorf("body contains unknown key %s", fieldName)
+
+		case err.Error() == "http: request body too large":
+			return fmt.Errorf("body must not be larger than %d bytes", maxBytes)
+
+		case errors.As(err, &invalidUnmarshalError):
+			return fmt.Errorf("body contains badly-formed JSON (at position %d)", invalidUnmarshalError)
+
+		default:
+			return err
+		}
+	}
+
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errors.New("body should'nt contain more than one json value")
+	}
+
+	return nil
+
+}
+
+// JSONWrite writes a JSON response to the client with the specified HTTP status code.
+// It takes an optional set of HTTP headers to include in the response. The function
+// marshals the provided data into JSON format and writes it to the response writer.
+// If marshaling the data fails, or if writing to the response writer fails, it returns an error.
+
+func (t *Tools) JSONWrite(w http.ResponseWriter, status int, data any, headers ...http.Header) error {
+	out, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	if len(headers) > 0 {
+		for key, value := range headers[0] {
+			w.Header()[key] = value
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if _, err = w.Write(out); err != nil {
+		return err
+	}
+	return nil
+}
+
+// JSONError writes an error response to the client with the specified HTTP status code.
+// It takes an error and an optional HTTP status code as parameters. If the status code
+// is not provided, it defaults to 500 Internal Server Error. The function marshals
+// the error into a JSONResponse and writes it to the response writer. If marshaling
+// the error fails, or if writing to the response writer fails, it returns an error.
+func (t *Tools) JSONError(w http.ResponseWriter, err error, status ...int) error {
+	statusCode := http.StatusInternalServerError
+	if len(status) > 0 {
+		statusCode = status[0]
+	}
+
+	var res JSONResponse
+	res.Error = true
+	res.Message = err.Error()
+
+	return t.JSONWrite(w, statusCode, res)
 }
