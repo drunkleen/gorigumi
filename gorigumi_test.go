@@ -1,6 +1,7 @@
-package toolkit
+package gorigumi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"image"
@@ -371,5 +372,53 @@ func TestTools_JSONError(t *testing.T) {
 
 	if res.Message != "foo" {
 		t.Errorf("expected message 'foo', got %s", res.Message)
+	}
+}
+
+type RoundTripFunc func(req *http.Request) *http.Response
+
+// RoundTrip implements the RoundTripper interface. It simply calls the
+// function passed to NewTestClient and returns the result as a *http.Response
+// and a nil error.
+func (r RoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return r(req), nil
+}
+
+// NewTestClient creates a new http.Client from a RoundTripFunc. The RoundTripFunc
+// passed to NewTestClient is used as the Transport for the new http.Client.
+//
+// The returned http.Client can be used in tests to mock out the result of an HTTP
+// request. The RoundTripFunc can return any *http.Response and error, allowing
+// for complete control over the response.
+func NewTestClient(fn RoundTripFunc) *http.Client {
+	return &http.Client{
+		Transport: fn,
+	}
+}
+
+// TestTools_JSONPushToRemote tests the JSONPushToRemote method by creating a test http client that always
+// returns a 200 status code and a JSON payload. It then calls JSONPushToRemote with this client and a
+// test struct, and checks that the method returns without error.
+func TestTools_JSONPushToRemote(t *testing.T) {
+	client := NewTestClient(
+		func(req *http.Request) *http.Response {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString("ok")),
+				Header:     make(http.Header),
+			}
+		},
+	)
+
+	testTools := New()
+
+	var foo struct {
+		Bar string `json:"bar"`
+	}
+
+	foo.Bar = "BAR"
+
+	if _, _, err := testTools.JSONPushToRemote("http//example.com/none/existing/path", foo, client); err != nil {
+		t.Errorf("failed to reach remote url: %v", err)
 	}
 }

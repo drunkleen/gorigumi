@@ -1,3 +1,3 @@
-module github.com/drunkleen/go-toolkit
+module github.com/drunkleen/gorigumi
 
 go 1.23.5

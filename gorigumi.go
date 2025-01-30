@@ -1,6 +1,7 @@
-package toolkit
+package gorigumi
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -384,4 +385,42 @@ func (t *Tools) JSONError(w http.ResponseWriter, err error, status ...int) error
 	res.Message = err.Error()
 
 	return t.JSONWrite(w, statusCode, res)
+}
+
+// JSONPush sends a JSON request to the given URL.
+//
+// The request is sent with the POST method and the data is marshaled into JSON format.
+// The Content-Type header is set to application/json.
+//
+// If the request fails or the response body can't be read, an error is returned.
+// The function returns the http.Response and the HTTP status code of the response.
+//
+// If an http.Client is provided, it will be used to make the request. Otherwise, a new
+// http.Client will be created.
+func (t *Tools) JSONPushToRemote(url string, data any, client ...*http.Client) (*http.Response, int, error) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	httpClient := &http.Client{}
+	if len(client) > 0 {
+		httpClient = client[0]
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, 0, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer res.Body.Close()
+
+	return res, res.StatusCode, nil
+
 }
