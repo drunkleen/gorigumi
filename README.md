@@ -1,6 +1,10 @@
 # GoRigumi 🛠️  
 
+![Go](https://img.shields.io/badge/Version-1.0.0-g) 
 ![Go](https://img.shields.io/badge/Go-1.18%2B-blue)
+
+---
+
 A simple and powerful Go toolkit for handling file uploads, JSON processing, and other utility functions.
 
 📌 **Repository:** [github.com/drunkleen/gorigumi](https://github.com/drunkleen/gorigumi)
@@ -8,7 +12,7 @@ A simple and powerful Go toolkit for handling file uploads, JSON processing, and
 ---
 
 ## Features 🚀  
-
+****
 ✅ File Upload (single & multiple)  
 ✅ Secure Random String Generation  
 ✅ File Download Handling  
